@@ -1,7 +1,7 @@
 import os
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # Define the default directory and file path for the configuration
 CONFIG_DIR = Path(os.path.expanduser("~")) / ".config" / "modelforge"
@@ -45,4 +45,35 @@ def save_config(config_data: Dict[str, Any]):
         with open(CONFIG_FILE, "w") as f:
             json.dump(config_data, f, indent=4)
     except IOError as e:
-        print(f"Error: Could not save config file to {CONFIG_FILE}. Details: {e}") 
+        print(f"Error: Could not save config file to {CONFIG_FILE}. Details: {e}")
+
+def set_current_model(provider: str, model: str):
+    """
+    Sets the currently active model in the configuration.
+
+    Args:
+        provider: The name of the provider.
+        model: The local alias of the model.
+    """
+    config_data = get_config()
+    providers = config_data.get("providers", {})
+    
+    if provider not in providers or model not in providers[provider].get("models", {}):
+        print(f"Error: Model '{model}' for provider '{provider}' not found in configuration.")
+        print("Please add it using 'modelforge config add' first.")
+        return False
+
+    config_data["current_model"] = {"provider": provider, "model": model}
+    save_config(config_data)
+    print(f"Successfully set '{model}' from provider '{provider}' as the current model.")
+    return True
+
+def get_current_model() -> Optional[Dict[str, str]]:
+    """
+    Retrieves the currently active model from the configuration.
+
+    Returns:
+        A dictionary containing the provider and model alias, or None.
+    """
+    config_data = get_config()
+    return config_data.get("current_model") 

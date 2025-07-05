@@ -1,25 +1,23 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "model-forge-lib"
-version = "0.0.1"
+[tool.poetry]
+name = "modelforge"
+version = "0.1.0"
 description = "A reusable library for managing LLM providers, authentication, and model selection."
+authors = ["Your Name <you@example.com>"]
 readme = "README.md"
-requires-python = ">=3.9"
-dependencies = [
-    "keyring",
-    "requests",
-    "langchain-core",
-    "langchain-openai",
-    "langchain-ollama",
-    "click",
-]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
-]
+packages = [{include = "modelforge", from = "src"}]
 
-[project.scripts]
-modelforge = "modelforge.cli:cli" 
+[tool.poetry.dependencies]
+python = "^3.11"
+click = "^8.1.7"
+keyring = "^25.2.1"
+requests = "^2.32.3"
+langchain-core = "^0.2.19"
+langchain-openai = "^0.1.14"
+langchain-community = "^0.2.5"
+
+[tool.poetry.scripts]
+modelforge = "modelforge.cli:cli"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api" 

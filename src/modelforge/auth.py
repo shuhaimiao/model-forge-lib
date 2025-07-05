@@ -79,9 +79,17 @@ class DeviceFlowAuth(AuthStrategy):
     def authenticate(self) -> Dict[str, Any]:
         """Performs the full device auth flow and stores the token."""
         # Step 1: Get the device and user codes
-        response = requests.post(self.device_code_url, data={"client_id": self.client_id, "scope": self.scope})
-        response.raise_for_status()
-        device_code_data = response.json()
+        headers = {"Accept": "application/json"}
+        payload = {"client_id": self.client_id, "scope": self.scope}
+        response = requests.post(self.device_code_url, data=payload, headers=headers)
+        
+        try:
+            response.raise_for_status()
+            device_code_data = response.json()
+        except (requests.exceptions.HTTPError, requests.exceptions.JSONDecodeError) as e:
+            print(f"Error requesting device code: {e}")
+            print(f"Response text: {response.text}")
+            raise
 
         print("\n--- Device Authentication ---")
         print(f"Please open the following URL in your browser: {device_code_data['verification_uri']}")
@@ -91,18 +99,40 @@ class DeviceFlowAuth(AuthStrategy):
         # Step 2: Poll for the access token
         while True:
             time.sleep(device_code_data['interval'])
-            token_response = requests.post(self.token_url, data={
+            token_payload = {
                 "client_id": self.client_id,
                 "device_code": device_code_data['device_code'],
                 "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
-            })
-            token_data = token_response.json()
+            }
+            token_response = requests.post(self.token_url, data=token_payload, headers=headers)
+            
+            try:
+                token_data = token_response.json()
+                token_response.raise_for_status()
+            except (requests.exceptions.HTTPError, requests.exceptions.JSONDecodeError) as e:
+                # This part is different from the original script, but good for debug
+                if "error" in token_response.text:
+                     error_info = token_response.json()
+                     if error_info.get("error") == "authorization_pending":
+                         continue
+                     elif error_info.get("error") == "slow_down":
+                         # The interval is in the response, but we can just add 5 as a fallback
+                         time.sleep(5)
+                         continue
+                
+                print(f"Error polling for token: {e}")
+                print(f"Response text: {token_response.text}")
+                raise
+
             if "access_token" in token_data:
                 access_token = token_data["access_token"]
                 keyring.set_password(self.provider_name, self.username, access_token)
                 print(f"Successfully authenticated and stored token for {self.provider_name}.")
                 return {"access_token": access_token}
             elif token_data.get("error") == "authorization_pending":
+                continue
+            elif token_data.get("error") == "slow_down":
+                time.sleep(5)
                 continue
             else:
                 raise Exception(f"Failed to get access token: {token_data.get('error_description')}")
