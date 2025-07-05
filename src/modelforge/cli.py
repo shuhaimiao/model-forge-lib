@@ -1,5 +1,6 @@
 import click
 import json
+import os
 from . import config
 from . import auth
 from .registry import ModelForgeRegistry
@@ -45,7 +46,8 @@ def add_model(provider, model, api_model_name, api_key, dev_auth):
     # --- This is a simplified logic block. We can make this more robust later ---
     if provider == "ollama":
         provider_data["llm_type"] = "ollama"
-        provider_data["base_url"] = "http://localhost:11434" # A sensible default
+        # Use the environment variable if it exists, otherwise default to localhost.
+        provider_data["base_url"] = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         provider_data["auth_strategy"] = "local"
     elif provider == "github_copilot":
         provider_data["llm_type"] = "openai_compatible"

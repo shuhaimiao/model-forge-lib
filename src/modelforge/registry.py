@@ -49,7 +49,10 @@ class ModelForgeRegistry:
 
         try:
             if llm_type == "ollama":
-                return ChatOllama(model=model_alias)
+                return ChatOllama(
+                    model=model_alias,
+                    base_url=provider_data.get("base_url")
+                )
 
             elif llm_type == "openai_compatible":
                 credentials = auth.get_credentials(provider_name, model_alias)

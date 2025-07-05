@@ -3,8 +3,11 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Define the default directory and file path for the configuration
-CONFIG_DIR = Path(os.path.expanduser("~")) / ".config" / "modelforge"
+# Allow overriding the config directory via an environment variable
+_config_dir_override = os.environ.get("MODEL_FORGE_CONFIG_DIR")
+
+# Define the path to the configuration file
+CONFIG_DIR = Path(_config_dir_override) if _config_dir_override else Path.home() / ".config" / "model-forge"
 CONFIG_FILE = CONFIG_DIR / "models.json"
 
 def get_config() -> Dict[str, Any]:
