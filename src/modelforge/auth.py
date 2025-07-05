@@ -165,3 +165,48 @@ class LocalAuth(AuthStrategy):
 # class LocalAuth(AuthStrategy):
 #     """Handles connection to local models like Ollama that require no auth."""
 #     ... 
+
+# A mapping from auth_strategy names in the config to the classes that handle them.
+AUTH_STRATEGY_MAP = {
+    "api_key": ApiKeyAuth,
+    "device_flow": DeviceFlowAuth,
+    "local": LocalAuth,
+}
+
+def get_credentials(provider_name: str, model_alias: str) -> Optional[Dict[str, Any]]:
+    """
+    A factory function that retrieves stored credentials for a given provider.
+    
+    It reads the main config, determines the correct auth strategy,
+    instantiates the handler, and returns the credentials.
+
+    Args:
+        provider_name: The name of the provider.
+        model_alias: The alias of the model (not directly used here but good for context).
+
+    Returns:
+        A dictionary of credentials, or None if not found or on error.
+    """
+    from . import config as app_config  # Use a different name to avoid confusion
+    
+    full_config = app_config.get_config()
+    provider_data = full_config.get("providers", {}).get(provider_name)
+
+    if not provider_data:
+        print(f"Error: Could not find provider '{provider_name}' in config for auth.")
+        return None
+
+    auth_strategy_name = provider_data.get("auth_strategy")
+    auth_class = AUTH_STRATEGY_MAP.get(auth_strategy_name)
+
+    if not auth_class:
+        print(f"Error: Unsupported authentication strategy '{auth_strategy_name}'")
+        return None
+
+    # Instantiate the correct handler
+    if auth_strategy_name == "device_flow":
+        auth_handler = auth_class(provider_name=provider_name, **provider_data.get("auth_details", {}))
+    else: # Works for ApiKeyAuth and LocalAuth
+        auth_handler = auth_class(provider_name=provider_name)
+
+    return auth_handler.get_credentials() 

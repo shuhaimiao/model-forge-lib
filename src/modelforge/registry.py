@@ -5,6 +5,8 @@ from . import config, auth
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 
 class ModelForgeRegistry:
     """
@@ -16,72 +18,74 @@ class ModelForgeRegistry:
 
     def get_llm(self, provider_name: Optional[str] = None, model_alias: Optional[str] = None) -> Optional[BaseChatModel]:
         """
-        Gets an instantiated LangChain chat model.
+        Retrieves and initializes a LangChain chat model based on the configuration.
 
-        If provider_name and model_alias are not provided, it uses the
-        currently selected model from the configuration.
-
-        Args:
-            provider_name: The name of the provider (e.g., 'github_copilot').
-            model_alias: The local alias for the model (e.g., 'copilot-chat').
+        If provider_name and model_alias are provided, it uses them. Otherwise, it
+        falls back to the currently selected model in the config.
 
         Returns:
-            An instance of a LangChain BaseChatModel, or None if an error occurs.
+            An initialized LangChain BaseChatModel, or None if configuration is missing or invalid.
         """
         if not provider_name or not model_alias:
-            current_model_info = config.get_current_model()
-            if not current_model_info:
-                print("Error: No model specified and no model is currently selected.")
-                print("Use 'modelforge config select' or provide provider_name and model_alias.")
+            current_model = config.get_current_model()
+            if not current_model:
+                print("Error: No model selected. Use 'modelforge config select' or provide provider and model.")
                 return None
-            provider_name = current_model_info["provider"]
-            model_alias = current_model_info["model"]
+            provider_name = current_model.get("provider")
+            model_alias = current_model.get("model")
 
         provider_data = self._config.get("providers", {}).get(provider_name)
         if not provider_data:
-            print(f"Error: Configuration for provider '{provider_name}' not found.")
+            print(f"Error: Provider '{provider_name}' not found in configuration.")
             return None
 
-        model_config = provider_data.get("models", {}).get(model_alias)
-        if model_config is None:
-            print(f"Error: Configuration for model '{model_alias}' not found.")
+        model_data = provider_data.get("models", {}).get(model_alias)
+        if model_data is None: # Can be an empty dict
+            print(f"Error: Model '{model_alias}' not found for provider '{provider_name}'.")
             return None
-
+            
+        llm_type = provider_data.get("llm_type")
         auth_strategy_name = provider_data.get("auth_strategy")
-        llm = None
 
         try:
-            if auth_strategy_name == "local":
-                llm = ChatOllama(model=model_alias)
-                print(f"Successfully instantiated local model '{model_alias}'.")
-                return llm
+            if llm_type == "ollama":
+                return ChatOllama(model=model_alias)
 
-            elif auth_strategy_name in ["device_flow", "api_key"]:
-                auth_class = getattr(auth, auth_strategy_name.replace("_", " ").title().replace(" ", "") + "Auth")
-                
-                if auth_strategy_name == "device_flow":
-                    auth_handler = auth_class(provider_name=provider_name, **provider_data["auth_details"])
-                else:
-                    auth_handler = auth_class(provider_name=provider_name)
-                
-                creds = auth_handler.get_credentials()
-                if not creds:
-                    print(f"Error: Could not retrieve credentials for {provider_name}.")
-                    print("Please run 'modelforge config add' to authenticate.")
+            elif llm_type == "openai_compatible":
+                credentials = auth.get_credentials(provider_name, model_alias)
+                if not credentials:
                     return None
                 
-                api_key = creds.get("access_token") or creds.get("api_key")
+                api_key = credentials.get("access_token") or credentials.get("api_key")
+                if not api_key:
+                    print(f"Error: Could not find token or key for '{provider_name}'.")
+                    return None
 
-                llm = ChatOpenAI(
-                    model=model_config.get("api_model_name", model_alias),
+                return ChatOpenAI(
+                    model_name=model_data.get("api_model_name", model_alias),
                     api_key=api_key,
                     base_url=provider_data.get("base_url")
                 )
-                print(f"Successfully instantiated remote model '{model_alias}' for provider '{provider_name}'.")
-                return llm
+
+            elif llm_type == "google_genai":
+                credentials = auth.get_credentials(provider_name, model_alias)
+                if not credentials:
+                    return None
+
+                api_key = credentials.get("api_key")
+                if not api_key:
+                    print(f"Error: Could not find API key for '{provider_name}'.")
+                    return None
+
+                return ChatGoogleGenerativeAI(
+                    model=model_data.get("api_model_name", model_alias),
+                    google_api_key=api_key
+                )
+
             else:
-                print(f"Error: Unsupported authentication strategy '{auth_strategy_name}'.")
+                print(f"Error: Unsupported llm_type '{llm_type}' for provider '{provider_name}'.")
                 return None
+
         except Exception as e:
-            print(f"An error occurred while instantiating the model: {e}")
+            print(f"Error creating LLM instance for {provider_name}/{model_alias}: {e}")
             return None

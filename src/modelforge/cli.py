@@ -57,11 +57,12 @@ def add_model(provider, model, api_model_name, api_key, dev_auth):
             "token_url": "https://github.com/login/oauth/access_token",
             "scope": "read:user"
         }
-    elif api_key:
-        provider_data["llm_type"] = "openai_compatible" # Assuming for now
+    elif provider == "google":
+        provider_data["llm_type"] = "google_genai"
         provider_data["auth_strategy"] = "api_key"
-    else:
-        click.echo(f"Error: Unsupported provider '{provider}' or missing authentication method.")
+    elif api_key:
+        # This can be a generic API key provider in the future
+        click.echo(f"Error: Unsupported provider '{provider}' for API key auth.")
         return
 
     model_config = {}
@@ -90,16 +91,28 @@ def add_model(provider, model, api_model_name, api_key, dev_auth):
         click.echo(f"API key for {provider} has been stored securely.")
 
 @config_group.command(name="select")
-@click.option('--provider', required=True, help="The provider of the model to select.")
-@click.option('--model', required=True, help="The alias of the model to select.")
-def select_model(provider, model):
+@click.option('--provider', 'provider_name', required=True, help="The name of the provider.")
+@click.option('--model', 'model_alias', required=True, help="The alias of the model to select.")
+def select_model(provider_name, model_alias):
     """Sets the currently active model for testing."""
-    config.set_current_model(provider, model)
+    config.set_current_model(provider_name, model_alias)
 
 @cli.command(name="test")
-@click.option('--prompt', required=True, help="The prompt to send to the currently selected model.")
+@click.option('--prompt', required=True, help="The prompt to send to the model.")
 def test_model(prompt):
     """Tests the currently selected model with a prompt."""
+    
+    current_model = config.get_current_model()
+    if not current_model:
+        print("Error: No model selected. Use 'modelforge config select'.")
+        return
+
+    provider_name = current_model.get("provider")
+    model_alias = current_model.get("model")
+
+    print(f"Sending prompt to the selected model [{provider_name}/{model_alias}]...")
+
+    # Step 1: Instantiate the registry and get the model
     registry = ModelForgeRegistry()
     llm = registry.get_llm() # Gets the currently selected model
 
@@ -108,24 +121,13 @@ def test_model(prompt):
         return
 
     try:
-        # --- Run the chain ---
-        click.echo(f"Sending prompt to the selected model...")
-        chain = llm | StrOutputParser()
-        
-        # Use a simple prompt template
-        template = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful AI assistant."),
-            ("human", "{user_prompt}")
-        ])
-        
-        # Stream the response
-        response_chunks = []
-        for chunk in template.pipe(chain).stream({"user_prompt": prompt}):
-            print(chunk, end="", flush=True)
-            response_chunks.append(chunk)
-        
-        print("\n---") # Newline after streaming is complete
-        click.echo("Done.")
+        # Step 2: Create the prompt and chain
+        prompt_template = ChatPromptTemplate.from_messages([("human", "{input}")])
+        chain = prompt_template | llm | StrOutputParser()
+
+        # Step 3: Run the chain and print the output
+        response = chain.invoke({"input": prompt})
+        print(response)
 
     except Exception as e:
         click.echo(f"\nAn error occurred while running the model: {e}")
