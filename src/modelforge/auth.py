@@ -254,7 +254,7 @@ def get_credentials(provider_name: str, model_alias: str, verbose: bool = False)
     """
     from . import config as app_config  # Use a different name to avoid confusion
     
-    full_config = app_config.get_config()
+    full_config, _ = app_config.get_config()
     provider_data = full_config.get("providers", {}).get(provider_name)
 
     if not provider_data:

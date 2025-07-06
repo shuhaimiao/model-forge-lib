@@ -24,12 +24,23 @@ def config_group():
 @config_group.command(name="show")
 def show_config():
     """Displays the current model configuration."""
-    current_config = config.get_config()
+    current_config, config_path = config.get_config()
+    
+    scope = "local" if config_path == config.LOCAL_CONFIG_FILE else "global"
+    
+    click.echo(f"--- Active ModelForge Config ({scope}) ---")
+    click.echo(f"Location: {config_path}\n")
+
     if not current_config.get("providers"):
         click.echo("Configuration is empty. Use 'modelforge config add' to add a model.")
         return
     
     click.echo(json.dumps(current_config, indent=4))
+
+@config_group.command(name="migrate")
+def migrate_config():
+    """Migrates the configuration from the old location to the new one."""
+    config.migrate_old_config()
 
 @config_group.command(name="add")
 @click.option('--provider', required=True, help="The name of the provider (e.g., 'openai', 'ollama', 'github_copilot', 'google').")
@@ -37,9 +48,12 @@ def show_config():
 @click.option('--api-model-name', help="The actual model name the API expects (e.g., 'claude-3.7-sonnet-thought').")
 @click.option('--api-key', help="The API key for the provider, if applicable.")
 @click.option('--dev-auth', is_flag=True, help="Use device authentication flow, if applicable.")
-def add_model(provider, model, api_model_name, api_key, dev_auth):
+@click.option('--local', is_flag=True, help="Save to local project config (./model-forge/config.json).")
+def add_model(provider, model, api_model_name, api_key, dev_auth, local):
     """Adds or updates a model configuration."""
-    current_config = config.get_config()
+    target_config_path = config.get_config_path(local=True) if local else config.GLOBAL_CONFIG_FILE
+    current_config, _ = config.get_config_from_path(target_config_path)
+
     providers = current_config.setdefault("providers", {})
     provider_data = providers.setdefault(provider, {"models": {}})
 
@@ -76,9 +90,10 @@ def add_model(provider, model, api_model_name, api_key, dev_auth):
         model_config["api_model_name"] = api_model_name
 
     provider_data["models"][model] = model_config
-    config.save_config(current_config)
+    config.save_config(current_config, local=local)
 
-    click.echo(f"Successfully configured model '{model}' for provider '{provider}'.")
+    scope_msg = "local" if local else "global"
+    click.echo(f"Successfully configured model '{model}' for provider '{provider}' in the {scope_msg} config.")
     click.echo("Run 'modelforge config show' to see the updated configuration.")
 
     # Optionally, trigger authentication immediately
@@ -99,17 +114,26 @@ def add_model(provider, model, api_model_name, api_key, dev_auth):
 @config_group.command(name="use")
 @click.option('--provider', 'provider_name', required=True, help="The name of the provider.")
 @click.option('--model', 'model_alias', required=True, help="The alias of the model to use.")
-def use_model(provider_name, model_alias):
+@click.option('--local', is_flag=True, help="Set the current model in the local project config.")
+def use_model(provider_name, model_alias, local):
     """Sets the currently active model for testing."""
-    config.set_current_model(provider_name, model_alias)
+    config.set_current_model(provider_name, model_alias, local=local)
 
 @config_group.command(name="remove")
 @click.option('--provider', required=True, help="The name of the provider.")
 @click.option('--model', required=True, help="The alias of the model to remove.")
 @click.option('--keep-credentials', is_flag=True, help="Keep stored credentials (don't remove from keyring).")
-def remove_model(provider, model, keep_credentials):
+@click.option('--local', is_flag=True, help="Remove from the local project config.")
+def remove_model(provider, model, keep_credentials, local):
     """Removes a model configuration and optionally its stored credentials."""
-    current_config = config.get_config()
+    target_config_path = config.get_config_path(local=True) if local else config.GLOBAL_CONFIG_FILE
+    current_config, _ = config.get_config_from_path(target_config_path)
+    
+    if not _.exists():
+        scope = "local" if local else "global"
+        click.echo(f"Error: {scope} configuration file does not exist at {target_config_path}.")
+        return
+        
     providers = current_config.get("providers", {})
     
     if provider not in providers:
@@ -141,7 +165,7 @@ def remove_model(provider, model, keep_credentials):
         click.echo("Cleared current model selection (removed model was selected).")
     
     # Save the updated configuration
-    config.save_config(current_config)
+    config.save_config(current_config, local=local)
     
     # Remove stored credentials unless explicitly kept
     if not keep_credentials:

@@ -14,8 +14,10 @@ class ModelForgeRegistry:
     """
 
     def __init__(self, verbose: bool = False):
-        self._config = config.get_config()
+        self._config, self._config_path = config.get_config()
         self.verbose = verbose
+        if self.verbose:
+            print(f"🔍 DEBUG - ModelForgeRegistry initialized with config from: {self._config_path}")
 
     def get_llm(self, provider_name: Optional[str] = None, model_alias: Optional[str] = None) -> Optional[BaseChatModel]:
         """

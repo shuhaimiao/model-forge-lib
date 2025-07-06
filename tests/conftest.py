@@ -5,23 +5,33 @@ from pathlib import Path
 # Adjust the import path if your structure is different.
 from modelforge import config
 
-# Use a dummy file path for testing
-DUMMY_CONFIG_PATH = Path("/tmp/test_config.json")
+# Dummy paths for testing
+DUMMY_GLOBAL_CONFIG_FILE = Path("/tmp/global_config.json")
+DUMMY_LOCAL_CONFIG_FILE = Path.cwd() / "model-forge" / "config.json"
 
 @pytest.fixture(autouse=True)
-def mock_config_file_for_all_tests(mocker):
+def mock_config_paths(mocker):
     """
-    A fixture that automatically mocks the config file path for all tests.
-    This prevents tests from accidentally using or modifying the real config file.
+    A fixture that automatically mocks the global and local config file paths for all tests.
+    This prevents tests from accidentally using or modifying the real config files.
     """
-    mocker.patch.object(config, 'CONFIG_FILE', DUMMY_CONFIG_PATH)
+    mocker.patch.object(config, 'GLOBAL_CONFIG_FILE', DUMMY_GLOBAL_CONFIG_FILE)
+    mocker.patch.object(config, 'LOCAL_CONFIG_FILE', DUMMY_LOCAL_CONFIG_FILE)
     
-    # Ensure the dummy file does not exist initially before each test
-    if DUMMY_CONFIG_PATH.exists():
-        DUMMY_CONFIG_PATH.unlink()
-        
+    # Ensure dummy files do not exist initially before each test
+    if DUMMY_GLOBAL_CONFIG_FILE.exists():
+        DUMMY_GLOBAL_CONFIG_FILE.unlink()
+    if DUMMY_LOCAL_CONFIG_FILE.exists():
+        DUMMY_LOCAL_CONFIG_FILE.unlink()
+        if DUMMY_LOCAL_CONFIG_FILE.parent.exists():
+            DUMMY_LOCAL_CONFIG_FILE.parent.rmdir()
+
     yield
     
-    # Clean up the dummy file after each test
-    if DUMMY_CONFIG_PATH.exists():
-        DUMMY_CONFIG_PATH.unlink() 
+    # Clean up dummy files after each test
+    if DUMMY_GLOBAL_CONFIG_FILE.exists():
+        DUMMY_GLOBAL_CONFIG_FILE.unlink()
+    if DUMMY_LOCAL_CONFIG_FILE.exists():
+        DUMMY_LOCAL_CONFIG_FILE.unlink()
+        if DUMMY_LOCAL_CONFIG_FILE.parent.exists():
+            DUMMY_LOCAL_CONFIG_FILE.parent.rmdir() 
