@@ -13,8 +13,9 @@ class ModelForgeRegistry:
     A factory for creating and managing LLM instances from a central configuration.
     """
 
-    def __init__(self):
+    def __init__(self, verbose: bool = False):
         self._config = config.get_config()
+        self.verbose = verbose
 
     def get_llm(self, provider_name: Optional[str] = None, model_alias: Optional[str] = None) -> Optional[BaseChatModel]:
         """
@@ -55,7 +56,7 @@ class ModelForgeRegistry:
                 )
 
             elif llm_type == "openai_compatible":
-                credentials = auth.get_credentials(provider_name, model_alias)
+                credentials = auth.get_credentials(provider_name, model_alias, verbose=self.verbose)
                 if not credentials:
                     return None
                 
@@ -64,14 +65,26 @@ class ModelForgeRegistry:
                     print(f"Error: Could not find token or key for '{provider_name}'.")
                     return None
 
+                # Debug information (only if verbose)
+                actual_model_name = model_data.get("api_model_name", model_alias)
+                base_url = provider_data.get("base_url")
+                if self.verbose:
+                    print(f"🔍 DEBUG - Creating ChatOpenAI instance:")
+                    print(f"   Provider: {provider_name}")
+                    print(f"   Model alias: {model_alias}")
+                    print(f"   Actual model name: {actual_model_name}")
+                    print(f"   Base URL: {base_url}")
+                    print(f"   API key/token: {'***' + api_key[-10:] if len(api_key) > 10 else '***'}")
+                    print(f"   Auth strategy: {auth_strategy_name}")
+
                 return ChatOpenAI(
-                    model_name=model_data.get("api_model_name", model_alias),
+                    model_name=actual_model_name,
                     api_key=api_key,
-                    base_url=provider_data.get("base_url")
+                    base_url=base_url
                 )
 
             elif llm_type == "google_genai":
-                credentials = auth.get_credentials(provider_name, model_alias)
+                credentials = auth.get_credentials(provider_name, model_alias, verbose=self.verbose)
                 if not credentials:
                     return None
 

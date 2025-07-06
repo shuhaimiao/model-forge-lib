@@ -4,6 +4,8 @@ import getpass
 import keyring
 import time
 import requests
+import json
+from datetime import datetime, timedelta
 
 class AuthStrategy(ABC):
     """Abstract base class for all authentication strategies."""
@@ -125,10 +127,23 @@ class DeviceFlowAuth(AuthStrategy):
                 raise
 
             if "access_token" in token_data:
-                access_token = token_data["access_token"]
-                keyring.set_password(self.provider_name, self.username, access_token)
+                # Store the complete token information including expiration
+                token_info = {
+                    "access_token": token_data["access_token"],
+                    "token_type": token_data.get("token_type", "bearer"),
+                    "expires_in": token_data.get("expires_in", 28800),  # Default to 8 hours
+                    "acquired_at": datetime.now().isoformat(),
+                    "scope": token_data.get("scope", self.scope)
+                }
+                
+                # Store refresh token if provided
+                if "refresh_token" in token_data:
+                    token_info["refresh_token"] = token_data["refresh_token"]
+                
+                # Store as JSON string in keyring
+                keyring.set_password(self.provider_name, self.username, json.dumps(token_info))
                 print(f"Successfully authenticated and stored token for {self.provider_name}.")
-                return {"access_token": access_token}
+                return {"access_token": token_data["access_token"]}
             elif token_data.get("error") == "authorization_pending":
                 continue
             elif token_data.get("error") == "slow_down":
@@ -138,11 +153,60 @@ class DeviceFlowAuth(AuthStrategy):
                 raise Exception(f"Failed to get access token: {token_data.get('error_description')}")
 
     def get_credentials(self) -> Optional[Dict[str, Any]]:
-        """Retrieves the stored access token from the keyring."""
-        access_token = keyring.get_password(self.provider_name, self.username)
-        if access_token:
-            return {"access_token": access_token}
-        return None
+        """Retrieves the stored access token from the keyring, checking for expiration."""
+        stored_data = keyring.get_password(self.provider_name, self.username)
+        if not stored_data:
+            return None
+        
+        try:
+            # Try to parse as JSON (new format)
+            token_info = json.loads(stored_data)
+            
+            # Check if token is expired
+            acquired_at = datetime.fromisoformat(token_info["acquired_at"])
+            expires_in = token_info.get("expires_in", 28800)  # Default 8 hours
+            expiry_time = acquired_at + timedelta(seconds=expires_in)
+            
+            # Add 5-minute buffer before expiration
+            buffer_time = expiry_time - timedelta(minutes=5)
+            
+            if datetime.now() >= buffer_time:
+                print(f"Token for {self.provider_name} is expired or expiring soon. Please re-authenticate.")
+                print(f"Run: modelforge config add --provider {self.provider_name} --model <model> --dev-auth")
+                return None
+            
+            return {"access_token": token_info["access_token"]}
+            
+        except (json.JSONDecodeError, KeyError, ValueError):
+            # Handle legacy format (just the token string)
+            # This is for backward compatibility
+            if stored_data.startswith('gho_') or stored_data.startswith('ghr_'):
+                print(f"Warning: Legacy token format detected for {self.provider_name}. Consider re-authenticating for better expiration handling.")
+                return {"access_token": stored_data}
+            return None
+
+    def get_token_info(self) -> Optional[Dict[str, Any]]:
+        """Get detailed token information for debugging purposes."""
+        stored_data = keyring.get_password(self.provider_name, self.username)
+        if not stored_data:
+            return None
+        
+        try:
+            token_info = json.loads(stored_data)
+            acquired_at = datetime.fromisoformat(token_info["acquired_at"])
+            expires_in = token_info.get("expires_in", 28800)
+            expiry_time = acquired_at + timedelta(seconds=expires_in)
+            
+            return {
+                "acquired_at": acquired_at,
+                "expires_in": expires_in,
+                "expiry_time": expiry_time,
+                "time_remaining": expiry_time - datetime.now(),
+                "is_expired": datetime.now() >= expiry_time,
+                "token_preview": token_info["access_token"][-10:] if token_info.get("access_token") else "N/A"
+            }
+        except (json.JSONDecodeError, KeyError, ValueError):
+            return {"legacy_format": True, "token_preview": stored_data[-10:] if stored_data else "N/A"}
 
 class LocalAuth(AuthStrategy):
     """Handles local models like Ollama that require no authentication."""
@@ -173,7 +237,7 @@ AUTH_STRATEGY_MAP = {
     "local": LocalAuth,
 }
 
-def get_credentials(provider_name: str, model_alias: str) -> Optional[Dict[str, Any]]:
+def get_credentials(provider_name: str, model_alias: str, verbose: bool = False) -> Optional[Dict[str, Any]]:
     """
     A factory function that retrieves stored credentials for a given provider.
     
@@ -183,6 +247,7 @@ def get_credentials(provider_name: str, model_alias: str) -> Optional[Dict[str, 
     Args:
         provider_name: The name of the provider.
         model_alias: The alias of the model (not directly used here but good for context).
+        verbose: If True, print debug information.
 
     Returns:
         A dictionary of credentials, or None if not found or on error.
@@ -198,15 +263,34 @@ def get_credentials(provider_name: str, model_alias: str) -> Optional[Dict[str, 
 
     auth_strategy_name = provider_data.get("auth_strategy")
     auth_class = AUTH_STRATEGY_MAP.get(auth_strategy_name)
+    
+    if verbose:
+        print(f"🔍 DEBUG - Getting credentials:")
+        print(f"   Provider: {provider_name}")
+        print(f"   Model: {model_alias}")
+        print(f"   Auth strategy: {auth_strategy_name}")
 
     if not auth_class:
-        print(f"Error: Unsupported authentication strategy '{auth_strategy_name}'")
+        print(f"Error: Unknown auth_strategy '{auth_strategy_name}' for provider '{provider_name}'.")
         return None
 
-    # Instantiate the correct handler
+    # Instantiate the auth strategy class
     if auth_strategy_name == "device_flow":
-        auth_handler = auth_class(provider_name=provider_name, **provider_data.get("auth_details", {}))
-    else: # Works for ApiKeyAuth and LocalAuth
-        auth_handler = auth_class(provider_name=provider_name)
+        auth_details = provider_data.get("auth_details", {})
+        if verbose:
+            print(f"   Device flow details: {auth_details}")
+        auth_handler = auth_class(
+            provider_name=provider_name,
+            **auth_details
+        )
+    else:
+        auth_handler = auth_class(provider_name)
 
-    return auth_handler.get_credentials() 
+    credentials = auth_handler.get_credentials()
+    if verbose:
+        print(f"   Retrieved credentials: {'Yes' if credentials else 'None'}")
+        if credentials:
+            cred_keys = list(credentials.keys())
+            print(f"   Credential keys: {cred_keys}")
+    
+    return credentials 

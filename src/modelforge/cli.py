@@ -103,9 +103,82 @@ def select_model(provider_name, model_alias):
     """Sets the currently active model for testing."""
     config.set_current_model(provider_name, model_alias)
 
+@config_group.command(name="remove")
+@click.option('--provider', required=True, help="The name of the provider.")
+@click.option('--model', required=True, help="The alias of the model to remove.")
+@click.option('--keep-credentials', is_flag=True, help="Keep stored credentials (don't remove from keyring).")
+def remove_model(provider, model, keep_credentials):
+    """Removes a model configuration and optionally its stored credentials."""
+    current_config = config.get_config()
+    providers = current_config.get("providers", {})
+    
+    if provider not in providers:
+        click.echo(f"Error: Provider '{provider}' not found in configuration.")
+        return
+    
+    provider_data = providers[provider]
+    models = provider_data.get("models", {})
+    
+    if model not in models:
+        click.echo(f"Error: Model '{model}' not found for provider '{provider}'.")
+        return
+    
+    # Remove the model from configuration
+    del models[model]
+    
+    # If no models left for this provider, remove the entire provider
+    if not models:
+        del providers[provider]
+        click.echo(f"Removed provider '{provider}' (no models remaining).")
+    else:
+        click.echo(f"Removed model '{model}' from provider '{provider}'.")
+    
+    # Check if this was the currently selected model
+    current_model = current_config.get("current_model", {})
+    if (current_model.get("provider") == provider and 
+        current_model.get("model") == model):
+        current_config["current_model"] = {}
+        click.echo("Cleared current model selection (removed model was selected).")
+    
+    # Save the updated configuration
+    config.save_config(current_config)
+    
+    # Remove stored credentials unless explicitly kept
+    if not keep_credentials:
+        try:
+            import keyring
+            # Try different credential storage patterns
+            credential_keys = [
+                f"{provider}_{model}",
+                f"{provider}:{model}",
+                f"{provider}_user"
+            ]
+            
+            removed_credentials = False
+            for key in credential_keys:
+                try:
+                    stored_credential = keyring.get_password(provider, key)
+                    if stored_credential:
+                        keyring.delete_password(provider, key)
+                        removed_credentials = True
+                        click.echo(f"Removed stored credentials for {provider}:{key}")
+                except Exception:
+                    # Credential might not exist, continue
+                    pass
+            
+            if not removed_credentials:
+                click.echo("No stored credentials found to remove.")
+                
+        except Exception as e:
+            click.echo(f"Warning: Could not remove credentials from keyring: {e}")
+    else:
+        click.echo("Kept stored credentials (--keep-credentials flag used).")
+
 @cli.command(name="test")
 @click.option('--prompt', required=True, help="The prompt to send to the model.")
-def test_model(prompt):
+@click.option('--verbose', is_flag=True, help="Enable verbose debug output.")
+@click.option('--smart-retry', is_flag=True, help="Enable smart retry with exponential backoff for rate limiting (GitHub Copilot only).")
+def test_model(prompt, verbose, smart_retry):
     """Tests the currently selected model with a prompt."""
     
     current_model = config.get_current_model()
@@ -119,7 +192,7 @@ def test_model(prompt):
     print(f"Sending prompt to the selected model [{provider_name}/{model_alias}]...")
 
     # Step 1: Instantiate the registry and get the model
-    registry = ModelForgeRegistry()
+    registry = ModelForgeRegistry(verbose=verbose)
     llm = registry.get_llm() # Gets the currently selected model
 
     if not llm:
@@ -131,12 +204,57 @@ def test_model(prompt):
         prompt_template = ChatPromptTemplate.from_messages([("human", "{input}")])
         chain = prompt_template | llm | StrOutputParser()
 
-        # Step 3: Run the chain and print the output
-        response = chain.invoke({"input": prompt})
+        # Step 3: Run the chain with smart retry if enabled
+        if smart_retry and provider_name == "github_copilot":
+            response = _invoke_with_smart_retry(chain, {"input": prompt}, verbose)
+        else:
+            response = chain.invoke({"input": prompt})
+        
         print(response)
 
     except Exception as e:
         click.echo(f"\nAn error occurred while running the model: {e}")
+
+def _invoke_with_smart_retry(chain, input_data, verbose=False, max_retries=3):
+    """
+    Invoke a LangChain chain with smart retry logic for GitHub Copilot rate limiting.
+    """
+    import time
+    import random
+    
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0 and verbose:
+                print(f"🔄 Retry attempt {attempt + 1}/{max_retries} for GitHub Copilot...")
+            
+            return chain.invoke(input_data)
+            
+        except Exception as e:
+            last_exception = e
+            error_msg = str(e).lower()
+            
+            # Check if this is a rate limiting error that we should retry
+            if any(phrase in error_msg for phrase in ["forbidden", "rate limit", "too many requests"]):
+                if attempt < max_retries - 1:  # Don't sleep on the last attempt
+                    # Exponential backoff with jitter: 1s, 2s, 4s + random(0-1)
+                    delay = (2 ** attempt) + random.uniform(0, 1)
+                    
+                    if verbose:
+                        print(f"⏳ Rate limited by GitHub Copilot. Waiting {delay:.1f}s before retry...")
+                    
+                    time.sleep(delay)
+                    continue
+                else:
+                    if verbose:
+                        print(f"❌ Max retries ({max_retries}) reached for GitHub Copilot rate limiting")
+            else:
+                # Non-rate-limit error, don't retry
+                raise e
+    
+    # If we get here, all retries failed
+    raise last_exception
 
 if __name__ == '__main__':
     cli() 
