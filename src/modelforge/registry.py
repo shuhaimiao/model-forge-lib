@@ -30,7 +30,7 @@ class ModelForgeRegistry:
         if not provider_name or not model_alias:
             current_model = config.get_current_model()
             if not current_model:
-                print("Error: No model selected. Use 'modelforge config select' or provide provider and model.")
+                print("Error: No model selected. Use 'modelforge config use' or provide provider and model.")
                 return None
             provider_name = current_model.get("provider")
             model_alias = current_model.get("model")

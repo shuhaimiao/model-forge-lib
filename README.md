@@ -45,6 +45,9 @@ To test the library locally, you can use the built-in Command-Line Interface (CL
 
     # Add GitHub Copilot and trigger the device authentication flow
     modelforge config add --provider github_copilot --model claude-3.7-sonnet --dev-auth
+
+    # Set a model to be the default
+    modelforge config use --provider ollama --model qwen3:1.7b
     ```
 
 ## Integration Guide

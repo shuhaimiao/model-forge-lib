@@ -96,10 +96,10 @@ def add_model(provider, model, api_model_name, api_key, dev_auth):
         keyring.set_password(provider, f"{provider}_user", api_key)
         click.echo(f"API key for {provider} has been stored securely.")
 
-@config_group.command(name="select")
+@config_group.command(name="use")
 @click.option('--provider', 'provider_name', required=True, help="The name of the provider.")
-@click.option('--model', 'model_alias', required=True, help="The alias of the model to select.")
-def select_model(provider_name, model_alias):
+@click.option('--model', 'model_alias', required=True, help="The alias of the model to use.")
+def use_model(provider_name, model_alias):
     """Sets the currently active model for testing."""
     config.set_current_model(provider_name, model_alias)
 
@@ -183,7 +183,7 @@ def test_model(prompt, verbose, smart_retry):
     
     current_model = config.get_current_model()
     if not current_model:
-        print("Error: No model selected. Use 'modelforge config select'.")
+        print("Error: No model selected. Use 'modelforge config use'.")
         return
 
     provider_name = current_model.get("provider")
