@@ -36,8 +36,12 @@ To test the library locally, you can use the built-in Command-Line Interface (CL
     # Add a local Ollama model
     modelforge config add --provider ollama --model qwen3:1.7b
 
-    # Add a provider requiring an API key
+    # Add OpenAI models with API key
     modelforge config add --provider openai --model gpt-4o-mini --api-key "YOUR_API_KEY_HERE"
+    modelforge config add --provider openai --model gpt-4o --api-model-name "gpt-4o" --api-key "YOUR_API_KEY_HERE"
+
+    # Add a provider requiring an API key (Google Gemini)
+    modelforge config add --provider google --model gemini-pro --api-model-name "gemini-1.5-pro" --api-key "YOUR_API_KEY_HERE"
 
     # Add GitHub Copilot and trigger the device authentication flow
     modelforge config add --provider github_copilot --model claude-3.7-sonnet --dev-auth
@@ -79,8 +83,10 @@ To use this library in a host application (e.g., RAG-Forge):
             print(response)
     ```
 
-## Features (Planned)
+## Features
 
-- Manages authentication for various LLM providers (API Key, OAuth 2.0 Device Flow, etc.).
-- Securely stores and retrieves credentials.
-- Provides a factory for creating LangChain-compatible model instances.
+- **Multi-Provider Support**: OpenAI, Ollama, GitHub Copilot, Google Gemini
+- **Flexible Authentication**: API Key, OAuth 2.0 Device Flow, Local (no auth)
+- **Secure Credential Storage**: Uses system keyring for API keys and tokens
+- **LangChain Integration**: Provides ready-to-use LangChain-compatible model instances
+- **Centralized Configuration**: Single configuration file managing all providers and models

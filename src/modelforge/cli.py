@@ -32,7 +32,7 @@ def show_config():
     click.echo(json.dumps(current_config, indent=4))
 
 @config_group.command(name="add")
-@click.option('--provider', required=True, help="The name of the provider (e.g., 'ollama', 'github_copilot').")
+@click.option('--provider', required=True, help="The name of the provider (e.g., 'openai', 'ollama', 'github_copilot', 'google').")
 @click.option('--model', required=True, help="A local, memorable name for the model (e.g., 'copilot-chat').")
 @click.option('--api-model-name', help="The actual model name the API expects (e.g., 'claude-3.7-sonnet-thought').")
 @click.option('--api-key', help="The API key for the provider, if applicable.")
@@ -49,6 +49,10 @@ def add_model(provider, model, api_model_name, api_key, dev_auth):
         # Use the environment variable if it exists, otherwise default to localhost.
         provider_data["base_url"] = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         provider_data["auth_strategy"] = "local"
+    elif provider == "openai":
+        provider_data["llm_type"] = "openai_compatible"
+        provider_data["base_url"] = "https://api.openai.com/v1"  # Default OpenAI endpoint
+        provider_data["auth_strategy"] = "api_key"
     elif provider == "github_copilot":
         provider_data["llm_type"] = "openai_compatible"
         provider_data["base_url"] = "https://api.githubcopilot.com"
