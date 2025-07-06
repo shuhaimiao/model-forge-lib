@@ -201,8 +201,7 @@ def remove_model(provider, model, keep_credentials, local):
 @cli.command(name="test")
 @click.option('--prompt', required=True, help="The prompt to send to the model.")
 @click.option('--verbose', is_flag=True, help="Enable verbose debug output.")
-@click.option('--smart-retry', is_flag=True, help="Enable smart retry with exponential backoff for rate limiting (GitHub Copilot only).")
-def test_model(prompt, verbose, smart_retry):
+def test_model(prompt, verbose):
     """Tests the currently selected model with a prompt."""
     
     current_model = config.get_current_model()
@@ -228,8 +227,8 @@ def test_model(prompt, verbose, smart_retry):
         prompt_template = ChatPromptTemplate.from_messages([("human", "{input}")])
         chain = prompt_template | llm | StrOutputParser()
 
-        # Step 3: Run the chain with smart retry if enabled
-        if smart_retry and provider_name == "github_copilot":
+        # Step 3: Run the chain with smart retry if the provider is GitHub Copilot
+        if provider_name == "github_copilot":
             response = _invoke_with_smart_retry(chain, {"input": prompt}, verbose)
         else:
             response = chain.invoke({"input": prompt})
